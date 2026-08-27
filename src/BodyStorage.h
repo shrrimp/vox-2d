@@ -3,7 +3,8 @@
 #include <vector>
 #include <algorithm>
 #include <cassert>
-#include "BodyId.h"
+#include <type_traits>
+#include "Handle.h"
 #include "PixelBoxy.h"
 #include "Joint.h"
 

@@ -29,6 +29,7 @@ add_executable(${EXECUTABLE_NAME}
   main.cpp
   Engine.cpp
   PixelBody.cpp
+  Joint.cpp
   XPM.cpp)
 target_compile_features(${EXECUTABLE_NAME} PRIVATE cxx_std_17)
 

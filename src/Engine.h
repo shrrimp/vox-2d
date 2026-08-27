@@ -7,16 +7,6 @@
 #include <vector>
 #include <memory>
 
-#define SIM_MU   0.9f
-#define SIM_BETA 0.2f
-#define SIM_S    0.1f
-#define SIM_MAX_BIAS 300.f
-
-#define GRAVITY 500.f
-
-#define VEL_FRICTION 0.9999f
-#define ROT_FRICTION 0.9999f
-
 struct Collision {
     BodyId o1; // body A
     BodyId o2; // body B
@@ -45,7 +35,7 @@ struct Engine {
     static constexpr float max_frame_time = 0.25f;
 
     BodyStorage bodies;
-    std::vector<Joint> joints;
+    JointStorage joints;
 
     std::vector<BodyId> ommit_mouse;
 
@@ -72,6 +62,6 @@ struct Engine {
     void loop();
 
     // joints
-    void join(BodyId a, sf::Vector2u pa, BodyId b, sf::Vector2u pb);
-    void disconnect(size_t id);
+    JointId join(BodyId a, sf::Vector2u pa, BodyId b, sf::Vector2u pb, Joint::JointType type);
+    void disconnect(JointId id);
 };

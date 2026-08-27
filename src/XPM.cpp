@@ -1,3 +1,4 @@
+#include "Settings.h"
 #include "XPM.h"
 #include "PixelBoxy.h"
 #include <fstream>

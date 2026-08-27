@@ -1,14 +1,12 @@
 #pragma once
+#include "Settings.h"
 #include <SFML/Graphics.hpp>
 #include <math.h>
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "BodyId.h"
-
-#define PX_SIZE 10.f
-#define PX_EMPTY ' ' // the one character that means "no pixel here"
+#include "Handle.h"
 
 struct CornerPx {
     sf::Vector2u p; // pixel coordinate
@@ -63,6 +61,7 @@ struct PixelBody {
     std::array<uint8_t, 128> mat_of{}; // pixel char -> index into materials, 0xFF = none
 
     PixelBody(const std::vector<std::string> &d, const sf::Vector2u &s, const sf::Vector2f &p);
+    PixelBody(const std::string &xpm_file, const sf::Vector2f &p, bool fixed, float angle);
     PixelBody(const std::string &xpm_file, const sf::Vector2f &p, bool fixed);
     PixelBody(const std::string &xpm_file, const sf::Vector2f &p);
 

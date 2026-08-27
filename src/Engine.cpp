@@ -1,8 +1,10 @@
+#include "Settings.h"
 #include "Engine.h"
 #include "Utils.h"
 #include <math.h>
 #include <SFML/System/Angle.hpp>
 #include <algorithm>
+#include <cassert>
 
 Engine::Engine() {
     this->init();
@@ -21,15 +23,15 @@ void Engine::init() {
         "assets/wheel.xpm",
     };
     
-    BodyId bar = bodies.create("assets/bar.xpm", sf::Vector2f(300.f, floor_height - 150.f));
-    BodyId w1 = bodies.create("assets/ball.xpm", sf::Vector2f(100.f, floor_height - 150.f), true);
+    BodyId bar = bodies.create("assets/bar.xpm", sf::Vector2f(300.f, floor_height - 150.f), false, -M_PI_2);
+    BodyId w1 = bodies.create("assets/ball.xpm", sf::Vector2f(100.f, floor_height - 150.f));
     BodyId w2 = bodies.create("assets/ball.xpm", sf::Vector2f(500.f, floor_height - 150.f));
 
     ommit_mouse.push_back(w1);
     ommit_mouse.push_back(w2);
 
-    join(bar, {2, 2}, w1, {7, 7});
-    join(bar, {2, 47}, w2, {7, 7});
+    join(bar, {2, 2}, w1, {7, 7}, Joint::BEARING);
+    join(bar, {2, 47}, w2, {7, 7}, Joint::BEARING);
 
     size_t amount = 100;
     for (size_t i = 0; i < amount; i++) {
@@ -353,45 +355,18 @@ void Engine::step(float h) {
     // build JointSolve array
     std::vector<JointSolve> sjoints;
 
-    for (size_t id = 0; id < joints.size(); ) {
+    for (size_t id_i = joints.live.size(); id_i-- > 0; ) {
+        size_t id = joints.liveSlots()[id_i];
         PixelBody *a = bodies.get(joints[id].a);
         PixelBody *b = bodies.get(joints[id].b);
 
         if (a == nullptr || b == nullptr) {
-            joints[id] = joints.back();
-            joints.pop_back();
+            joints.destroy(joints.jointId(id));
             continue;
         }
 
         Joint *j = &(joints[id]);
-
-        sf::Vector2f ra = Utils::rotVec(a->offsets[j->pa.x][j->pa.y], a->getCS());
-        sf::Vector2f rb = Utils::rotVec(b->offsets[j->pb.x][j->pb.y], b->getCS());
-        
-        sf::Vector2f anchor_a = a->pos + ra;
-        sf::Vector2f anchor_b = b->pos + rb;
-        sf::Vector2f C = anchor_a - anchor_b;
-
-        float k00 = a->imass() + b->imass() + a->iinertia() * ra.y * ra.y + b->iinertia() * rb.y * rb.y;
-        float k01 = - a->iinertia() * ra.x * ra.y - b->iinertia() * rb.x * rb.y;
-        float k11 = a->imass() + b->imass() + a->iinertia() * ra.x * ra.x + b->iinertia() * rb.x * rb.x;
-        
-        float det = k00 * k11 - k01 * k01;
-        float inv_det = (det > 1e-12f) ? 1.f / det : 0.f;
-
-        sf::Vector2f bias = (j->beta / h) * C;
-        float bl = bias.length();
-        if (bl > SIM_MAX_BIAS) bias *= SIM_MAX_BIAS / bl;
-
-        sjoints.push_back({
-            j,
-            a, b,
-            ra, rb,
-            k00, k01, k11, inv_det,
-            bias
-        });
-
-        id++;
+        sjoints.push_back(j->prepare(a, b, h));
     }
     
 
@@ -445,7 +420,9 @@ void Engine::step(float h) {
     
             float beta = SIM_BETA;
             float s = SIM_S; // accepted penetration
-            float vtarget = fminf(SIM_MAX_BIAS, (beta * fmaxf(0.f, c.delta - s)) / h);
+            float vtarget = SIM_MAX_BIAS > 0.f
+                 ? fminf(SIM_MAX_BIAS, (beta * fmaxf(0.f, c.delta - s)) / h)
+                 : (beta * fmaxf(0.f, c.delta - s)) / h;
     
             float lambda = (vtarget - vn) / kn;
     
@@ -544,15 +521,15 @@ void Engine::draw() {
         b.draw(window);
     }
 
-    for (auto &j : joints) {
-        PixelBody *a = bodies.get(j.a);
+    for (auto &id : joints.liveSlots()) {
+        PixelBody *a = bodies.get(joints[id].a);
         if (a == nullptr) continue;
-        PixelBody *b = bodies.get(j.b);
+        PixelBody *b = bodies.get(joints[id].b);
         if (b == nullptr) continue;
 
         
-        sf::Vector2f pa = a->worldPxCenter(j.pa);
-        sf::Vector2f pb = b->worldPxCenter(j.pb);
+        sf::Vector2f pa = a->worldPxCenter(joints[id].pa);
+        sf::Vector2f pb = b->worldPxCenter(joints[id].pb);
         
         sf::Color col = sf::Color::Cyan;
 
@@ -587,24 +564,26 @@ void Engine::draw() {
 
 
 // joints
-void Engine::join(BodyId a, sf::Vector2u pa, BodyId b, sf::Vector2u pb) {
+JointId Engine::join(BodyId a, sf::Vector2u pa, BodyId b, sf::Vector2u pb, Joint::JointType type) {
     // validate bodies
     PixelBody *ba = bodies.get(a);
-    if (ba == nullptr) return;
     PixelBody *bb = bodies.get(b);
-    if (bb == nullptr) return;
-    if (ba->getPx(pa) == PX_EMPTY || bb->getPx(pb) == PX_EMPTY) return; // Joints only work on valid pixels, not empty space
+    if (ba == nullptr || bb == nullptr) return {};
+    if (ba->getPx(pa) == PX_EMPTY || bb->getPx(pb) == PX_EMPTY) return {}; // Joints only work on valid pixels, not empty space
 
     // create filter
     bodies.filter(a, b, true);
-    joints.push_back({ a, b, pa, pb });
+
+    float rest_ang = ba->ang - bb->ang;
+    return joints.create( a, pa, b, pb, type, rest_ang);
 }
 
-void Engine::disconnect(size_t id) {
-    if (id >= joints.size()) return;
+void Engine::disconnect(JointId id) {
+    Joint *j = joints.get(id);
+    if (j == nullptr) return;
 
     // destroy filter
-    bodies.filter(joints[id].a, joints[id].b, false);
-    joints[id] = joints.back();
-    joints.pop_back();
+    bodies.filter(j->a, j->b, false);
+    
+    joints.destroy(id);
 }

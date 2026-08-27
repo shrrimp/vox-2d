@@ -1,3 +1,4 @@
+#include "Settings.h"
 #include "PixelBoxy.h"
 #include "Utils.h"
 #include "XPM.h"
@@ -107,6 +108,34 @@ PixelBody::PixelBody(const std::string &xpm_file, const sf::Vector2f &p, bool fi
     applyExtensions(materials, img.extensions);
 
     pos = p;
+    this->fixed = fixed;
+    size = sf::Vector2u(img.width, img.height);
+    build(d);
+}
+
+PixelBody::PixelBody(const std::string &xpm_file, const sf::Vector2f &p, bool fixed, float angle) {
+    const XPM::Image img = XPM::load(xpm_file);
+
+    // XPM is row major, data is column major -> transpose
+    std::vector<std::string> d(img.width, std::string(img.height, PX_EMPTY));
+    for (unsigned int y = 0; y < img.height; y++)
+        for (unsigned int x = 0; x < img.width; x++)
+            d[x][y] = img.rows[y][x];
+
+    // one material per solid colour-table entry, reachable straight from the pixel char
+    mat_of.fill(0xFF);
+    for (const XPM::Entry &e : img.palette) {
+        if (e.empty) continue;
+        Material m;
+        m.name = e.material;
+        m.color = e.color;
+        mat_of[(unsigned char)e.key] = (uint8_t)materials.size();
+        materials.push_back(m);
+    }
+    applyExtensions(materials, img.extensions);
+
+    pos = p;
+    ang = angle;
     this->fixed = fixed;
     size = sf::Vector2u(img.width, img.height);
     build(d);
