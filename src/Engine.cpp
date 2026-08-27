@@ -43,7 +43,7 @@ void Engine::init() {
     }
     {
         // Linear bearing + Spring
-        BodyId bar = bodies.create("assets/bar.xpm", sf::Vector2f(300.f, floor_height - 250.f), true);
+        BodyId bar = bodies.create("assets/bar.xpm", sf::Vector2f(300.f, floor_height - 250.f));
         BodyId bar2 = bodies.create("assets/thin_bar.xpm", sf::Vector2f(300.f, floor_height - 300.f));
         BodyId bucket = bodies.create("assets/bucket.xpm", sf::Vector2f(300.f, floor_height - 600.f));
 
