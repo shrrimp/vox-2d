@@ -45,7 +45,7 @@ struct Engine {
 
     ContactCache contacts;
 
-    PixelBody floor_body = PixelBody({}, {0, 0}, sf::Vector2f(0.f, 0.f));
+    PixelBody floor_body = PixelBody({}, {0, 0}, sf::Vector2f(0.f, 0.f), true);
     
     float floor_height = 1000.f;
     float accumulator = 0.f;
@@ -61,7 +61,11 @@ struct Engine {
     void draw();
     void loop();
 
+    private:
+
     // joints
-    JointId join(BodyId a, sf::Vector2u pa, BodyId b, sf::Vector2u pb, Joint::JointType type);
+    JointId join(JointSettings settings);
     void disconnect(JointId id);
+
+    void drawJoints();
 };

@@ -3,6 +3,8 @@
 #define SIM_S    0.1f
 #define SIM_MAX_BIAS 300.f
 
+#define SIM_LIM_SLOP 0.f
+
 #define GRAVITY 500.f
 
 #define VEL_FRICTION 0.9999f

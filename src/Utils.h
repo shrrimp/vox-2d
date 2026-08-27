@@ -20,40 +20,9 @@ namespace Utils {
         return sf::Vector2f(v.x * cs.x - v.y * cs.y, v.x * cs.y + v.y * cs.x);
     }
     
-    // x y : normal --- z : distance
-    inline sf::Vector3f sdRoundedSquare(float px, float py, float half, float r) {
-        const float sx = std::copysign(1.f, px);   // d|p|/dp
-        const float sy = std::copysign(1.f, py);
-
-        const float qx = std::fabs(px) - half + r;
-        const float qy = std::fabs(py) - half + r;
-
-        const float mx = qx > 0.f ? qx : 0.f;
-        const float my = qy > 0.f ? qy : 0.f;
-        const float l2 = mx*mx + my*my;
-        const float l  = std::sqrt(l2);
-
-        const float inside = std::fmin(std::fmax(qx, qy), 0.f);
-        sf::Vector3f h;
-        h.z = inside + l - r;
-
-        if (l2 > 0.f) {                      // edge or corner: gradient = normalize(m)
-            const float inv = 1.f / l;
-            h.x = sx * mx * inv;
-            h.y = sy * my * inv;
-        } else {                             // deep interior: nearest axis
-            const bool xdom = qx > qy;
-            h.x = xdom ? sx : 0.f;
-            h.y = xdom ? 0.f : sy;
-        }
-
-        return h;
-    }
-
-    // returns the distance to the center of a rounded square -> being over PX_SIZE/2 is being outside of the square
-    inline sf::Vector3f PixelSDF(sf::Vector2f p, sf::Vector2f s, sf::Vector2f cs, float size) {
-        sf::Vector2f lp = rotVec(p - s, {cs.x, -cs.y});
-        
-        return sdRoundedSquare(lp.x, lp.y, size / 2.f, size / 4.f);
+    inline float wrapPi(float a) {
+        a = fmodf(a + M_PIf, 2.f * M_PIf);
+        if (a < 0.f) a += 2.f * M_PIf;
+        return a - M_PIf;
     }
 }

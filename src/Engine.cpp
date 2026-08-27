@@ -5,6 +5,7 @@
 #include <SFML/System/Angle.hpp>
 #include <algorithm>
 #include <cassert>
+#include <iostream>
 
 Engine::Engine() {
     this->init();
@@ -23,19 +24,53 @@ void Engine::init() {
         "assets/wheel.xpm",
     };
     
-    BodyId bar = bodies.create("assets/bar.xpm", sf::Vector2f(300.f, floor_height - 150.f), false, -M_PI_2);
-    BodyId w1 = bodies.create("assets/ball.xpm", sf::Vector2f(100.f, floor_height - 150.f));
-    BodyId w2 = bodies.create("assets/ball.xpm", sf::Vector2f(500.f, floor_height - 150.f));
+    if (false) { // Car and wall
+        bodies.create("assets/bar.xpm", sf::Vector2f(50.f, floor_height - 200.f), true, 0.f);
+    
+        BodyId bar = bodies.create("assets/bar.xpm", sf::Vector2f(300.f, floor_height - 150.f), false, -M_PI_2);
+        BodyId bar2 = bodies.create("assets/bar.xpm", sf::Vector2f(300.f, floor_height - 300.f));
+        BodyId bar3 = bodies.create("assets/bar.xpm", sf::Vector2f(600.f, floor_height - 300.f));
+        BodyId w1 = bodies.create("assets/ball.xpm", sf::Vector2f(100.f, floor_height - 150.f), false, M_PI_4);
+        BodyId w2 = bodies.create("assets/ball.xpm", sf::Vector2f(500.f, floor_height - 150.f));
+    
+        ommit_mouse.push_back(w1);
+        ommit_mouse.push_back(w2);
+    
+        join({ Joint::MOTOR, bar, w1, {2, 2}, {7, 7}, .target = 1.f, .max_force = 50000000.f });
+        join({ Joint::MOTOR, bar, w2, {2, 47}, {7, 7}, .target = 1.f, .max_force = 50000000.f });
+        join({ Joint::FIXED, bar, bar2, {2, 16}, {2, 47} });
+        join({ Joint::FIXED, bar, bar3, {2, 34}, {2, 47} });
+    }
+    {
+        // Linear bearing + Spring
+        BodyId bar = bodies.create("assets/bar.xpm", sf::Vector2f(300.f, floor_height - 250.f), true);
+        BodyId bar2 = bodies.create("assets/thin_bar.xpm", sf::Vector2f(300.f, floor_height - 300.f));
+        BodyId bucket = bodies.create("assets/bucket.xpm", sf::Vector2f(300.f, floor_height - 600.f));
 
-    ommit_mouse.push_back(w1);
-    ommit_mouse.push_back(w2);
+        join({ Joint::LIN_BEARING, bar, bar2, .pb = {1, 48}, .axis_pos = {2.5, 25.5}, .axis_angle = M_PI_2, .course_min = -200.f, .course_max = 200.f});
+        join({ Joint::SPRING, bar, bar2, {1, 49}, {1, 48}, .hertz = 1.f, .damping = 0.2f, .rest_length = 200.f});
+        join({ Joint::FIXED, bar2, bucket, {1, 1}, {15, 13}});
+    }
 
-    join(bar, {2, 2}, w1, {7, 7}, Joint::BEARING);
-    join(bar, {2, 47}, w2, {7, 7}, Joint::BEARING);
+    {
+        // Angular spring
+        BodyId bar = bodies.create("assets/bar.xpm", sf::Vector2f(800.f, floor_height - 250.f), true, M_PI_2);
+        BodyId wheel = bodies.create("assets/wheel.xpm", sf::Vector2f(1000.f, floor_height - 250.f));
 
-    size_t amount = 100;
-    for (size_t i = 0; i < amount; i++) {
-        bodies.create("assets/px.xpm", sf::Vector2f(float(i + 1) * PX_SIZE, floor_height - PX_SIZE * 2));
+        join({ Joint::ANG_SPRING, bar, wheel, {2, 2}, {7, 7}, .hertz = 1.8f, .damping = .1f});
+    }
+
+    if (false) {
+        // cube sea
+        size_t amount = 200;
+        size_t x = 0;
+        size_t y = 0;
+        while (x * y < amount) {
+            for (x = 0; x < 20; x++) {
+                bodies.create("assets/px.xpm", sf::Vector2f(float(x + 30) * PX_SIZE * 2.f, floor_height - y * PX_SIZE * 2.5f));
+            }
+            y++;
+        }
     }
 }
 
@@ -84,6 +119,7 @@ void Engine::update(float dt) {
     floor_body.pos.y = floor_height;
 
     static BodyId selected;
+    static sf::Vector2f grab_local; // grab point in A's local frame, same space as offsets
     sf::Vector2i mpos = sf::Mouse::getPosition(window);
     sf::Vector2f mposf(float(mpos.x), float(mpos.y));
 
@@ -100,6 +136,21 @@ void Engine::update(float dt) {
                     selected = bodies.bodyId(id);
                 }
             }
+
+            grab_local = {0.f, 0.f};
+            PixelBody *body = bodies.get(selected);
+            if (body != nullptr) {
+                sf::Vector2f cs = body->getCS();
+                sf::Vector2f local = Utils::rotVec(mposf - body->pos, {cs.x, -cs.y});
+                // inverse of worldPxCenter: local/PX_SIZE + centroid lands in (x+.5, y+.5) space
+                sf::Vector2f px = local / PX_SIZE + body->centroid;
+                // grab off-centre only on a real pixel, so a click into empty space
+                // cannot hand a far-away body a huge lever arm
+                if (px.x >= 0.f && px.y >= 0.f
+                 && body->getPx(sf::Vector2u(unsigned(px.x), unsigned(px.y))) != PX_EMPTY) {
+                    grab_local = local;
+                }
+            }
         }
 
         if (selected.gen != 0) {
@@ -107,14 +158,18 @@ void Engine::update(float dt) {
 
             if (body == nullptr) selected = {0, 0};
             else {
-                sf::Vector2f force_dir = (mposf - body->pos);
-                body->forces += force_dir * 5.f * GRAVITY;
-        
+                sf::Vector2f r = Utils::rotVec(grab_local, body->getCS());
+                sf::Vector2f grab = body->pos + r;
+                sf::Vector2f force = (mposf - grab) * 5.f * GRAVITY;
+
+                body->forces += force;
+                body->a_forces += r.cross(force); // off-centre pull also turns the body
+
                 sf::Vertex v[2] = {
-                    {.position = body->pos, .color = sf::Color::Red},
+                    {.position = grab, .color = sf::Color::Red},
                     {.position = mposf, .color = sf::Color::Red}
                 };
-        
+
                 window.draw(v, 2, sf::PrimitiveType::Lines);
             }
         }
@@ -139,6 +194,20 @@ void Engine::update(float dt) {
             };
 
             window.draw(v, 2, sf::PrimitiveType::Lines);
+        }
+    }
+
+
+    for (auto &id : joints.liveSlots()) {
+        const float piston_speed = 150.f; // world units per second
+        Joint &j = joints[id];
+        if (j.type == Joint::PISTON) {
+            if (sf::Keyboard::isKeyPressed(j.key1)) {
+                j.target = fminf(j.course_max, j.target + dt * piston_speed);
+            }
+            if (sf::Keyboard::isKeyPressed(j.key2)) {
+                j.target = fmaxf(j.course_min, j.target - dt * piston_speed);
+            }
         }
     }
 
@@ -352,10 +421,18 @@ void Engine::step(float h) {
         window.draw(text);
     }
 
+    text.setString("bodies : " + std::to_string(bodies.liveSlots().size()));
+    text.setPosition({10.f, 74.f});
+    window.draw(text);
+
+    text.setString("joints : " + std::to_string(joints.liveSlots().size()));
+    text.setPosition({10.f, 90.f});
+    window.draw(text);
+
     // build JointSolve array
     std::vector<JointSolve> sjoints;
 
-    for (size_t id_i = joints.live.size(); id_i-- > 0; ) {
+    for (size_t id_i = joints.liveSlots().size(); id_i-- > 0; ) {
         size_t id = joints.liveSlots()[id_i];
         PixelBody *a = bodies.get(joints[id].a);
         PixelBody *b = bodies.get(joints[id].b);
@@ -380,18 +457,35 @@ void Engine::step(float h) {
 
         sf::Vector2f P = c.ln * c.n + c.lt * c.n.perpendicular();
 
-        s1.vel   -= s1.imass() * P;
-        s1.omega -= s1.iinertia() * (c.p - s1.pos).cross(P);
-        s2.vel   += s2.imass() * P;
-        s2.omega += s2.iinertia() * (c.p - s2.pos).cross(P);
+        if (!s1.fixed) {
+            s1.vel   -= s1.imass() * P;
+            s1.omega -= s1.iinertia() * (c.p - s1.pos).cross(P);
+        }
+
+        if (!s2.fixed) {
+            s2.vel   += s2.imass() * P;
+            s2.omega += s2.iinertia() * (c.p - s2.pos).cross(P);
+        }
     }
 
     for (JointSolve &s : sjoints) {
-        const sf::Vector2f P = s.j->lambda;
-        s.A->vel   += s.A->imass()    * P;
-        s.A->omega += s.A->iinertia() * s.ra.cross(P);
-        s.B->vel   -= s.B->imass()    * P;
-        s.B->omega -= s.B->iinertia() * s.rb.cross(P);
+        if (s.has_anchor) {
+            const sf::Vector2f P = s.j->lambda;
+            s.A->vel   += s.A->imass()    * P;
+            s.A->omega += s.A->iinertia() * s.ra.cross(P);
+            s.B->vel   -= s.B->imass()    * P;
+            s.B->omega -= s.B->iinertia() * s.rb.cross(P);
+        }
+
+        // warm start scalar rows
+        for (int i = 0; i < s.row_count; i++) {
+            const JointSolve::Row &r = s.rows[i];
+            const float P = *r.lambda;
+            s.A->vel   += s.A->imass()    * P * r.dir;
+            s.A->omega += s.A->iinertia() * r.ja * P;
+            s.B->vel   -= s.B->imass()    * P * r.dir;
+            s.B->omega -= s.B->iinertia() * r.jb * P;
+        }
     }
     
     // Solve collisions
@@ -404,6 +498,8 @@ void Engine::step(float h) {
             // all values at 0 to make everything easy from now on
             // could test for bool flr but I'd rather compute 0s than write ifs
             PixelBody &s2 = flr ? floor_body : bodies[c.o2.slot];
+
+            if (s1.fixed && flr) continue;
     
             sf::Vector2f r1 = c.p - s1.pos;
             sf::Vector2f r2 = c.p - s2.pos;
@@ -443,41 +539,70 @@ void Engine::step(float h) {
             c.ln = lnn;
     
             // apply forces
-            s1.vel   -= s1.imass() * lapp * c.n;
-            s1.omega -= s1.iinertia() * r1cn * lapp;
+            if (!s1.fixed) {
+
+                s1.vel   -= s1.imass() * lapp * c.n;
+                s1.omega -= s1.iinertia() * r1cn * lapp;
+            }
     
-            s2.vel   += s2.imass() * lapp * c.n;
-            s2.omega += s2.iinertia() * r2cn * lapp;
+            if (!s2.fixed) {
+                s2.vel   += s2.imass() * lapp * c.n;
+                s2.omega += s2.iinertia() * r2cn * lapp;
+            }
 
             float ltapp = ltn - c.lt;
             c.lt = ltn;
     
             // apply friction forces
             // no forces stored in the body's force fields? idk why
-            s1.vel   -= s1.imass() * ltapp * t;
-            s1.omega -= s1.iinertia() * r1ct * ltapp;
+            if (!s1.fixed) {
+                s1.vel   -= s1.imass() * ltapp * t;
+                s1.omega -= s1.iinertia() * r1ct * ltapp;
+            }
     
-            s2.vel   += s2.imass() * ltapp * t;
-            s2.omega += s2.iinertia() * r2ct * ltapp;
+            if (!s2.fixed) {
+                s2.vel   += s2.imass() * ltapp * t;
+                s2.omega += s2.iinertia() * r2ct * ltapp;
+            }
         }
         for (JointSolve &s : sjoints) {
-            sf::Vector2f vp_a = s.A->vel + s.A->omega * s.ra.perpendicular();
-            sf::Vector2f vp_b = s.B->vel + s.B->omega * s.rb.perpendicular();
-            sf::Vector2f cdot = vp_a - vp_b;
+            if (s.has_anchor) {
+                sf::Vector2f vp_a = s.A->vel + s.A->omega * s.ra.perpendicular();
+                sf::Vector2f vp_b = s.B->vel + s.B->omega * s.rb.perpendicular();
+                sf::Vector2f cdot = vp_a - vp_b;
+    
+                sf::Vector2f rhs = -(cdot + s.bias);
+    
+                sf::Vector2f dl(
+                    s.inv_det * ( s.k11 * rhs.x - s.k01 * rhs.y),
+                    s.inv_det * (-s.k01 * rhs.x + s.k00 * rhs.y)
+                );
+    
+                s.j->lambda += dl;
+    
+                s.A->vel   += s.A->imass()    * dl;
+                s.A->omega += s.A->iinertia() * s.ra.cross(dl);
+                s.B->vel   -= s.B->imass()    * dl;
+                s.B->omega -= s.B->iinertia() * s.rb.cross(dl);
+            }
 
-            sf::Vector2f rhs = -(cdot + s.bias);
+            for (int i = 0; i < s.row_count; i++) {
+                JointSolve::Row &r = s.rows[i];
 
-            sf::Vector2f dl(
-                s.inv_det * ( s.k11 * rhs.x - s.k01 * rhs.y),
-                s.inv_det * (-s.k01 * rhs.x + s.k00 * rhs.y)
-            );
+                float cdot = (s.A->vel - s.B->vel).dot(r.dir)
+                        + s.A->omega * r.ja - s.B->omega * r.jb;
 
-            s.j->lambda += dl;
+                float dl  = -(cdot + r.bias + r.gamma * (*r.lambda)) * r.inv_k;
+                float old = *r.lambda;
+                float nl  = std::clamp(old + dl, r.lo, r.hi);
+                dl = nl - old;
+                *r.lambda = nl;
 
-            s.A->vel   += s.A->imass()    * dl;
-            s.A->omega += s.A->iinertia() * s.ra.cross(dl);
-            s.B->vel   -= s.B->imass()    * dl;
-            s.B->omega -= s.B->iinertia() * s.rb.cross(dl);
+                s.A->vel   += s.A->imass()    * dl * r.dir;
+                s.A->omega += s.A->iinertia() * r.ja * dl;
+                s.B->vel   -= s.B->imass()    * dl * r.dir;
+                s.B->omega -= s.B->iinertia() * r.jb * dl;
+            }
         }
     }
     
@@ -521,26 +646,7 @@ void Engine::draw() {
         b.draw(window);
     }
 
-    for (auto &id : joints.liveSlots()) {
-        PixelBody *a = bodies.get(joints[id].a);
-        if (a == nullptr) continue;
-        PixelBody *b = bodies.get(joints[id].b);
-        if (b == nullptr) continue;
-
-        
-        sf::Vector2f pa = a->worldPxCenter(joints[id].pa);
-        sf::Vector2f pb = b->worldPxCenter(joints[id].pb);
-        
-        sf::Color col = sf::Color::Cyan;
-
-        sf::Vertex line[] = {
-            {pa, col},
-            {pb, col},
-        };
-
-        window.draw(line, 2, sf::PrimitiveType::Lines);
-    }
-    
+    drawJoints();
 
     // MOUSE COLLISION DETECTOR --- DISABLED
     // sf::Vector2i mpos = sf::Mouse::getPosition(window);
@@ -564,18 +670,29 @@ void Engine::draw() {
 
 
 // joints
-JointId Engine::join(BodyId a, sf::Vector2u pa, BodyId b, sf::Vector2u pb, Joint::JointType type) {
+JointId Engine::join(JointSettings settings) {
+    JointSettings s = settings;
     // validate bodies
-    PixelBody *ba = bodies.get(a);
-    PixelBody *bb = bodies.get(b);
-    if (ba == nullptr || bb == nullptr) return {};
-    if (ba->getPx(pa) == PX_EMPTY || bb->getPx(pb) == PX_EMPTY) return {}; // Joints only work on valid pixels, not empty space
-
+    PixelBody *ba = bodies.get(settings.a);
+    PixelBody *bb = bodies.get(settings.b);
+    if (ba == nullptr || bb == nullptr || ba == bb) {
+        return {};
+    }
+    // ignore pixel check on A for linear bearings
+    bool skipA = settings.type == Joint::LIN_BEARING || settings.type == Joint::PISTON;
+    if ((!skipA && ba->getPx(settings.pa) == PX_EMPTY) || bb->getPx(settings.pb) == PX_EMPTY) {
+        return {};
+    }
+    
     // create filter
-    bodies.filter(a, b, true);
-
+    bodies.filter(settings.a, settings.b, true);
+    
     float rest_ang = ba->ang - bb->ang;
-    return joints.create( a, pa, b, pb, type, rest_ang);
+    s.rest_angle = rest_ang;
+
+    s.axis_pos = (s.axis_pos - ba->centroid) * PX_SIZE; // convert axis position
+
+    return joints.create(s);
 }
 
 void Engine::disconnect(JointId id) {
@@ -586,4 +703,75 @@ void Engine::disconnect(JointId id) {
     bodies.filter(j->a, j->b, false);
     
     joints.destroy(id);
+}
+
+void Engine::drawJoints() {
+    for (auto &id : joints.liveSlots()) {
+        Joint &j = joints[id];
+        PixelBody *a = bodies.get(j.a);
+        if (a == nullptr) continue;
+        PixelBody *b = bodies.get(j.b);
+        if (b == nullptr) continue;
+
+        sf::Vector2f pb = b->worldPxCenter(j.pb);
+        
+        if (j.type == Joint::FIXED
+         || j.type == Joint::BEARING
+         || j.type == Joint::MOTOR
+         || j.type == Joint::ANG_SPRING
+        ) {
+            sf::Vector2f pa = a->worldPxCenter(j.pa);
+            
+            sf::Color col = sf::Color::Cyan;
+    
+            sf::Vertex line[] = {
+                {pa, col},
+                {pb, col},
+            };
+    
+            window.draw(line, 2, sf::PrimitiveType::Lines);
+
+            sf::CircleShape circ;
+            circ.setRadius(3.f);
+            circ.setOrigin({3.f, 3.f});
+            circ.setFillColor(sf::Color::Red);
+            // draw anchor A
+            circ.setPosition(pa);
+            window.draw(circ);
+            // draw anchor B
+            circ.setPosition(pb);
+            window.draw(circ);
+
+        } else if (j.type == Joint::LIN_BEARING
+         || j.type == Joint::PISTON
+        ) {
+            sf::Vector2f apos = a->pos + Utils::rotVec(j.axis_pos, a->getCS());
+
+            // draw course
+            sf::Vector2f cv = Utils::rotVec({std::cos(j.axis_angle), std::sin(j.axis_angle)}, a->getCS());
+            // an unlimited course has no finite endpoint to draw; run it off-screen instead
+            const float reach = float(window.getSize().x + window.getSize().y);
+            sf::Vector2f ca = apos + fmaxf(j.course_min, -reach) * cv;
+            sf::Vector2f cb = apos + fminf(j.course_max,  reach) * cv;
+
+            sf::Color course_color = sf::Color::Magenta;
+            sf::Vertex line[] = {
+                {ca, course_color},
+                {cb, course_color},
+            };
+
+            window.draw(line, 2, sf::PrimitiveType::Lines);
+
+            // draw anchor A & B
+            sf::CircleShape circ;
+            circ.setRadius(3.f);
+            circ.setOrigin({3.f, 3.f});
+            circ.setFillColor(sf::Color::Red);
+            
+            circ.setPosition(apos);
+            window.draw(circ);
+            circ.setPosition(pb);
+            window.draw(circ);
+        }
+    }
 }

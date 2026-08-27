@@ -60,6 +60,13 @@ PixelBody::PixelBody(const std::vector<std::string> &d, const sf::Vector2u &s, c
     build(d);
 }
 
+PixelBody::PixelBody(const std::vector<std::string> &d, const sf::Vector2u &s, const sf::Vector2f &p, bool isFixed) {
+    pos = p;
+    size = s;
+    fixed = isFixed;
+    build(d);
+}
+
 PixelBody::PixelBody(const std::string &xpm_file, const sf::Vector2f &p) {
     const XPM::Image img = XPM::load(xpm_file);
 

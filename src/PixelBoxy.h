@@ -60,6 +60,7 @@ struct PixelBody {
     std::vector<Material> materials; // empty -> every pixel uses the defaults
     std::array<uint8_t, 128> mat_of{}; // pixel char -> index into materials, 0xFF = none
 
+    PixelBody(const std::vector<std::string> &d, const sf::Vector2u &s, const sf::Vector2f &p, bool isFixed);
     PixelBody(const std::vector<std::string> &d, const sf::Vector2u &s, const sf::Vector2f &p);
     PixelBody(const std::string &xpm_file, const sf::Vector2f &p, bool fixed, float angle);
     PixelBody(const std::string &xpm_file, const sf::Vector2f &p, bool fixed);

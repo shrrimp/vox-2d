@@ -38,5 +38,31 @@
 build/
 bin/
 
+# In-source CMake artifacts (note: src/config.h.in is a tracked template, not output)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+CTestTestfile.cmake
+install_manifest.txt
+CMakeUserPresets.json
+_deps/
+/Makefile
+src/Makefile
+src/config.h
+
+# Tooling
+compile_commands.json
+.cache/
+
+# Nix
+result
+result-*
+.direnv/
+
 # Editor
 .vscode/
+.idea/
+*.swp
+.DS_Store
