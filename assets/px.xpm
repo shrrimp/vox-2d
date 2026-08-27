@@ -1,0 +1,9 @@
+/* XPM */
+static const char *px_xpm[] = {
+"2 2 1 1",
+"  c #523800 s heavy",
+"  ",
+"  ",
+"XPMEXT material heavy density 40.0 friction 0.4 strength 3.0",
+"XPMENDEXT"
+};

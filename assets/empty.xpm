@@ -1,0 +1,6 @@
+/* XPM */
+static const char *box_xpm[] = {
+"1 1 1 1",
+"  c None",
+" "
+};
